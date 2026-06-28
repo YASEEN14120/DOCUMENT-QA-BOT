@@ -68,25 +68,27 @@ Supported formats:
 
         save_path = os.path.join("docs", uploaded_file.name)
 
-        if not os.path.exists(save_path):
+        # Check if the file already exists
+        if os.path.exists(save_path):
+
+            st.warning("⚠️ This document already exists.")
+
+        else:
 
             # Save uploaded file
             with open(save_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
 
-            # Index all documents
+            # Index documents
             with st.spinner("Indexing document..."):
                 index_documents()
 
             st.success("✅ Document indexed successfully!")
 
-            # Reload RAG
+            # Reload RAG chain
             st.cache_resource.clear()
 
             st.rerun()
-
-        else:
-            st.warning("⚠️ This document already exists.")
 
     st.markdown("---")
 
@@ -121,8 +123,7 @@ question = st.chat_input("Ask a question about your documents...")
 
 if question:
 
-    # User message
-
+    # Show user message
     st.session_state.messages.append(
         {
             "role": "user",
@@ -134,45 +135,60 @@ if question:
         st.markdown(question)
 
     # Assistant response
-
     with st.chat_message("assistant"):
 
         with st.spinner("Searching documents..."):
 
-            response = rag_chain.invoke(
-                {
-                    "input": question
-                }
-            )
+            try:
+                response = rag_chain.invoke(
+                    {
+                        "input": question
+                    }
+                )
 
-        answer = response["answer"]
+                answer = response["answer"]
 
-        st.markdown(answer)
+                st.markdown(answer)
 
-        # Show Sources
+                # Show Sources
+                if "context" in response:
 
-        if "context" in response:
+                    with st.expander("📚 Sources Used"):
 
-            with st.expander("📚 Sources Used"):
+                        shown = set()
 
-                shown = set()
+                        for doc in response["context"]:
 
-                for doc in response["context"]:
+                            source = doc.metadata.get("source", "Unknown")
+                            page = doc.metadata.get("page", "Unknown")
 
-                    source = doc.metadata.get("source", "Unknown")
-                    page = doc.metadata.get("page", "Unknown")
+                            key = (source, page)
 
-                    key = (source, page)
+                            if key not in shown:
 
-                    if key not in shown:
+                                shown.add(key)
 
-                        shown.add(key)
+                                st.write(f"📄 {source} | Page {page}")
 
-                        st.write(f"📄 {source} | Page {page}")
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": answer
+                    }
+                )
 
-        st.session_state.messages.append(
-            {
-                "role": "assistant",
-                "content": answer
-            }
-        )
+            except Exception as e:
+
+                error = str(e)
+
+                if "429" in error or "RESOURCE_EXHAUSTED" in error:
+
+                    st.error(
+                        "🚫 Gemini API quota exceeded.\n\n"
+                        "Please wait a while before trying again, "
+                        "or use another Google API key."
+                    )
+
+                else:
+
+                    st.error(f"❌ Error:\n\n{error}")
